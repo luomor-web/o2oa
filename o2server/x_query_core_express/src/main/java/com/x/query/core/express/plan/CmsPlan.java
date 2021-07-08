@@ -1,5 +1,6 @@
 package com.x.query.core.express.plan;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
@@ -270,7 +271,8 @@ public class CmsPlan extends Plan {
 			ps.add(this.documentPredicate_creator(cb, root));
 			ps.add(this.documentPredicate_appInfo(cb, root));
 			ps.add(this.documentPredicate_date(cb, root));
-			ps.add(this.documentPredicate_Filter(cb, root, runtime, filterList));
+			ps.add(this.documentPredicate_Filter_or(cb, root, runtime, filterList));
+			ps.add(this.documentPredicate_Filter_and(cb, root, runtime, filterList));
 			ps.add(this.documentPredicate_draft(cb, root));
 
 			Predicate predicate = this.documentPredicate_typeScope(cb, root);
@@ -383,15 +385,20 @@ public class CmsPlan extends Plan {
 			return null;
 		}
 
-		private Predicate documentPredicate_Filter(CriteriaBuilder cb, Root<Document> root, Runtime runtime,
+		private Predicate documentPredicate_Filter_or(CriteriaBuilder cb, Root<Document> root, Runtime runtime,
 				List<FilterEntry> filterList) throws Exception {
 			boolean flag = true;
 			Predicate p = cb.disjunction();
-			for (FilterEntry filterEntry : filterList) {
+			List<FilterEntry> list = new ArrayList<>();
+			list.addAll(filterList);
+			if(runtime.filterList!=null){
+				list.addAll(runtime.filterList);
+			}
+			for (FilterEntry filterEntry : list) {
 				if (filterEntry.path.indexOf("(") > -1 && filterEntry.path.indexOf(")") > -1) {
-					flag = false;
 					String path = StringUtils.substringBetween(filterEntry.path, "(", ")").trim();
 					if ("readPersonList".equals(path)) {
+						flag = false;
 						p = cb.or(p, cb.isMember("所有人", root.get(Document_.readPersonList)));
 						p = cb.or(p, cb.isMember(runtime.person, root.get(Document_.readPersonList)));
 						if (runtime.person.indexOf("@") > -1) {
@@ -399,18 +406,19 @@ public class CmsPlan extends Plan {
 									root.get(Document_.readPersonList)));
 						}
 					} else if ("readUnitList".equals(path)) {
+						flag = false;
 						if (ListTools.isNotEmpty(runtime.unitAllList)) {
 							p = cb.or(p, root.get(Document_.readUnitList).in(runtime.unitAllList));
 						}
 					} else if ("readGroupList".equals(path)) {
+						flag = false;
 						if (ListTools.isNotEmpty(runtime.groupList)) {
 							p = cb.or(p, root.get(Document_.readGroupList).in(runtime.groupList));
 						}
 					} else {
-						Predicate fp = filterEntry.toCmsDocumentPredicate(cb, root, runtime, path);
-						if (StringUtils.equals("and", filterEntry.logic)) {
-							p = cb.and(p, fp);
-						} else {
+						if (!StringUtils.equals("and", filterEntry.logic)) {
+							Predicate fp = filterEntry.toCmsDocumentPredicate(cb, root, runtime, path);
+							flag = false;
 							p = cb.or(p, fp);
 						}
 					}
@@ -420,7 +428,33 @@ public class CmsPlan extends Plan {
 				return null;
 			}
 			return p;
+		}
 
+		private Predicate documentPredicate_Filter_and(CriteriaBuilder cb, Root<Document> root, Runtime runtime,
+													  List<FilterEntry> filterList) throws Exception {
+			boolean flag = true;
+			Predicate p = cb.conjunction();
+			List<FilterEntry> list = new ArrayList<>();
+			list.addAll(filterList);
+			if(runtime.filterList!=null){
+				list.addAll(runtime.filterList);
+			}
+			for (FilterEntry filterEntry : list) {
+				if (filterEntry.path.indexOf("(") > -1 && filterEntry.path.indexOf(")") > -1) {
+					String path = StringUtils.substringBetween(filterEntry.path, "(", ")").trim();
+					if (!"readPersonList".equals(path) && !"readUnitList".equals(path) && !"readGroupList".equals(path)) {
+						if (StringUtils.equals("and", filterEntry.logic)) {
+							Predicate fp = filterEntry.toCmsDocumentPredicate(cb, root, runtime, path);
+							flag = false;
+							p = cb.and(p, fp);
+						}
+					}
+				}
+			}
+			if (flag) {
+				return null;
+			}
+			return p;
 		}
 	}
 }
